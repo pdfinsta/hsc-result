@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HSC Result Finder</title>
+<style>
+:root{--bg:#f3f1ec;--paper:#fffdf8;--ink:#1d2a24;--mute:#66726b;--line:#d9d4c7;--green:#0b6b45;--red:#b3261e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Segoe UI",system-ui,sans-serif}
+main{max-width:720px;margin:0 auto;padding:32px 16px 64px}
+h1{font:700 2rem/1.15 Georgia,"Times New Roman",serif;margin:0 0 4px}
+.sub{color:var(--mute);margin:0 0 24px}
+form,.sheet{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:20px}
+form{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+label{display:flex;flex-direction:column;font-size:.875rem;color:var(--mute);gap:4px}
+input,select{font:inherit;color:var(--ink);padding:9px 10px;border:1px solid var(--line);border-radius:4px;background:#fff}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--green);outline-offset:1px}
+button{grid-column:1/-1;font:inherit;font-weight:600;padding:11px;border:0;border-radius:4px;background:var(--green);color:#fff;cursor:pointer}
+button:disabled{opacity:.6;cursor:progress}
+#msg{margin:16px 0;min-height:1.5em}
+#msg.err{color:var(--red)}
+.sheet{margin-top:8px}
+.head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--green);padding-bottom:10px}
+.head h2{font:700 1.4rem Georgia,serif;margin:0}
+.gpa{font:700 2rem Georgia,serif;color:var(--green)}
+.gpa.fail{color:var(--red)}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:14px 0}
+dt{color:var(--mute)}dd{margin:0}
+.wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+th{background:#ebe7da;font-size:.875rem}
+td:last-child{font-weight:600}
+.cap{margin-top:12px}.cap img{grid-column:1/-1;justify-self:start;background:#fff;border:1px solid var(--line);border-radius:4px}button.ghost{background:none;color:var(--green);border:1px solid var(--green)}
+[hidden]{display:none}
+@media(max-width:520px){form{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+  <h1>HSC result finder</h1>
+  <p class="sub">Enter your details as printed on your admit card. Results come from the official education board site.</p>
+  <form id="f">
+        <label>Year <select name="year" id="year"></select></label>
+    <label>Board
+      <select name="board"><option value="dhaka">Dhaka</option><option value="comilla">Comilla</option><option value="chittagong">Chittagong</option><option value="mymensingh">Mymensingh</option><option value="rajshahi">Rajshahi</option><option value="barisal">Barisal</option><option value="sylhet">Sylhet</option><option value="dinajpur">Dinajpur</option><option value="jessore">Jessore</option><option value="madrasah">Madrasah</option><option value="tec">Technical</option></select></label>
+    <label>Roll <input name="roll" inputmode="numeric" pattern="\d+" required></label>
+    <label>Registration <input name="reg" inputmode="numeric" pattern="\d+" required></label>
+    <button id="go">Continue</button>
+  </form>
+  <form id="c" class="cap" hidden>
+    <img id="cimg" alt="Captcha image" width="200">
+    <label>Type the number in the image <input name="captcha" id="ccode" inputmode="numeric" pattern="\d+" required autocomplete="off"></label>
+    <button id="go2">Get result</button>
+    <button type="button" id="again" class="ghost">Show another image</button>
+  </form>
+  <div id="msg" role="status" aria-live="polite"></div>
+  <section class="sheet" id="out" hidden>
+    <div class="head"><h2 id="name"></h2><div class="gpa" id="gpa"></div></div>
+    <dl id="info"></dl>
+    <div class="wrap"><table><thead><tr><th>Code</th><th>Subject</th><th>Grade</th></tr></thead><tbody id="rows"></tbody></table></div>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id), f=$('f'), msg=$('msg');
+const ys=$('year'); for(let y=new Date().getFullYear();y>=1996;y--) ys.add(new Option(y,y));
+let sid=null; const c=$('c');
+async function api(path,params){
+  const r=await fetch(path+'?'+new URLSearchParams(params)); const d=await r.json();
+  if(!r.ok) throw new Error(d.error||'Something went wrong.'); return d;
+}
+f.addEventListener('submit',async e=>{
+  e.preventDefault(); $('out').hidden=true; c.hidden=true; msg.className='';
+  msg.textContent='Opening the board site… about 10 seconds.'; $('go').disabled=true;
+  try{
+    const d=await api('/api/start',new FormData(f)); sid=d.id;
+    $('cimg').src=d.captcha; c.hidden=false; $('ccode').value=''; $('ccode').focus(); msg.textContent='';
+  }catch(err){msg.className='err';msg.textContent=err.message}
+  $('go').disabled=false;
+});
+c.addEventListener('submit',async e=>{
+  e.preventDefault(); msg.className=''; msg.textContent='Getting result…'; $('go2').disabled=true;
+  try{ show(await api('/api/submit',{id:sid,captcha:$('ccode').value})); c.hidden=true; msg.textContent=''; }
+  catch(err){msg.className='err';msg.textContent=err.message; c.hidden=true}
+  $('go2').disabled=false;
+});
+$('again').addEventListener('click',async()=>{
+  try{ $('cimg').src=(await api('/api/reload',{id:sid})).captcha; }
+  catch(err){msg.className='err';msg.textContent=err.message}
+});
+function show(d){
+  const i=d.info, g=i.GPA||'';
+  $('name').textContent=i.Name||'Result';
+  const gp=$('gpa'); gp.textContent=g?'GPA '+g:''; gp.className='gpa'+((i.Result||'').toUpperCase().includes('PASS')?'':' fail');
+  const dl=$('info'); dl.replaceChildren();
+  for(const [k,v] of Object.entries(i)){ if(k==='Name'||k==='GPA') continue;
+    const dt=document.createElement('dt'),dd=document.createElement('dd'); dt.textContent=k; dd.textContent=v; dl.append(dt,dd); }
+  const tb=$('rows'); tb.replaceChildren();
+  for(const s of d.subjects){const tr=tb.insertRow(); for(const v of [s.code,s.subject,s.grade]) tr.insertCell().textContent=v;}
+  $('out').hidden=false;
+}
+</script>
+</body>
+</html>
